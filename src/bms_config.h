@@ -103,21 +103,6 @@
 // corruption or partial writes on the next boot.
 // ---------------------------------------------------------------------------
 #include <EEPROM.h>
-inline uint8_t settingsComputeChecksum(const EEPROMSettings &s)
-{
-    const uint8_t *p    = reinterpret_cast<const uint8_t *>(&s);
-    const uint8_t *end  = p + sizeof(EEPROMSettings);
-    const uint8_t *skip = reinterpret_cast<const uint8_t *>(&s.checksum);
-    uint8_t xorSum = 0;
-    for (; p < end; ++p) { if (p != skip) xorSum ^= *p; }
-    return xorSum;
-}
-inline void settingsSave(EEPROMSettings &s)
-{
-    s.checksum = settingsComputeChecksum(s);
-    EEPROM.put(EEPROM_PAGE, s);
-    EEPROM.commit();
-}
 
 // ---------------------------------------------------------------------------
 // EEPROMSettings struct
@@ -154,3 +139,19 @@ typedef struct {
     uint32_t chargerHeartbeatID;
     uint8_t  batteryID_u8;   // redundant field kept for struct padding alignment
 } EEPROMSettings;
+
+inline uint8_t settingsComputeChecksum(const EEPROMSettings &s)
+{
+    const uint8_t *p    = reinterpret_cast<const uint8_t *>(&s);
+    const uint8_t *end  = p + sizeof(EEPROMSettings);
+    const uint8_t *skip = reinterpret_cast<const uint8_t *>(&s.checksum);
+    uint8_t xorSum = 0;
+    for (; p < end; ++p) { if (p != skip) xorSum ^= *p; }
+    return xorSum;
+}
+inline void settingsSave(EEPROMSettings &s)
+{
+    s.checksum = settingsComputeChecksum(s);
+    EEPROM.put(EEPROM_PAGE, s);
+    EEPROM.commit();
+}

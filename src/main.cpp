@@ -93,6 +93,11 @@ void setCANEnabled(bool en)
 // =============================================================================
 void setup()
 {
+    // Give the RTOS scheduler and WDT time to initialise before we do anything.
+    // Without this, early GPIO activity can starve the idle task and trip the
+    // Task WDT before Serial is even open (seen as TG1WDT_SYS_RESET boot loop).
+    delay(200);
+
     // 1. Boost converter enable MUST be first - powers the SN65HVD231.
     //    Without this, CAN transceiver has no 3.3V supply.
     pinMode(PIN_BOOST_EN, OUTPUT);
@@ -117,18 +122,26 @@ void setup()
     analogReadResolution(12);   // 12-bit (0-4095, 0-3.3V)
 
     // 6. Status LED
-    FastLED.addLeds<WS2812B, PIN_WS2812, GRB>(leds, WS2812_COUNT);
-    FastLED.setBrightness(40);
-    leds[0] = CRGB::Blue;   // booting
-    FastLED.show();
+    // WARNING: PIN_WS2812 is defined as GPIO4, which on some T-CAN485 board
+    // revisions is also the CAN RX pin. FastLED uses the RMT peripheral which
+    // will conflict with TWAI on the same GPIO and cause an immediate WDT crash.
+    //
+    // LED is therefore DISABLED until you confirm your CAN GPIO assignment:
+    //   - If CAN RX = GPIO26 (not GPIO4): uncomment the three lines below.
+    //   - If CAN RX = GPIO4:              change PIN_WS2812 in pin_config.h
+    //                                     to a free GPIO before enabling.
+    //
+    //FastLED.addLeds<WS2812B, PIN_WS2812, GRB>(leds, WS2812_COUNT);
+    //FastLED.setBrightness(40);
+    //leds[0] = CRGB::Blue; FastLED.show();
 
-    // 7. USB serial console
+    // 7. USB serial console (CH9102 bridge - no native USB CDC, skip !Serial wait)
     Serial.begin(115200);
-    uint32_t t0 = millis();
-    while (!Serial && (millis() - t0) < 2000) delay(10);
+    delay(500);   // let the CH9102 enumerate on the host before printing
     Logger::console("BMW i3 BMS T-CAN485 booting...");
     Logger::console("CAN pins: TX=GPIO%d RX=GPIO%d  (verify vs schematic!)",
                     PIN_CAN_TX, PIN_CAN_RX);
+    Logger::console("NOTE: WS2812 LED disabled until CAN GPIO conflict resolved.");
 
     // 8. NVS / EEPROM settings
     EEPROM.begin(sizeof(EEPROMSettings));
@@ -150,13 +163,9 @@ void setup()
     } else {
         Logger::console("CAN FAILED - check GPIO%d/GPIO%d and PIN_BOOST_EN",
                         PIN_CAN_TX, PIN_CAN_RX);
-        leds[0] = CRGB::Red;
-        FastLED.show();
     }
 
     Logger::console("Boot complete. Press H for menu.");
-    leds[0] = CRGB::Green;
-    FastLED.show();
 }
 
 // =============================================================================
@@ -198,11 +207,8 @@ void loop()
         // EEPROM.put(EEPROM_PAGE, settings); EEPROM.commit();
     }
 
-    // --- Status LED ---
-    if (now - lastLEDUpdate >= LED_UPDATE_MS) {
-        lastLEDUpdate = now;
-        updateLED();
-    }
+    // --- Status LED (disabled until CAN/LED GPIO conflict resolved) ---
+    // if (now - lastLEDUpdate >= LED_UPDATE_MS) { lastLEDUpdate=now; updateLED(); }
 
     // --- Serial console ---
     console.loop();
@@ -235,50 +241,100 @@ void updateLED()
 }
 
 // =============================================================================
+// writeDefaults  –  populate settings with safe defaults, write to NVS
+// =============================================================================
+static void writeDefaults()
+{
+    memset(&settings, 0, sizeof(settings));
+    settings.version            = EEPROM_VERSION;
+    settings.canSpeed           = CAN_BAUD_RATE;
+    settings.batteryID          = 1;
+    settings.logLevel           = Logger::Info;
+    settings.OverVSetpoint      = DEFAULT_OVER_V;
+    settings.UnderVSetpoint     = DEFAULT_UNDER_V;
+    settings.OverTSetpoint      = DEFAULT_OVER_T;
+    settings.UnderTSetpoint     = DEFAULT_UNDER_T;
+    settings.ChargeTSetpoint    = DEFAULT_CHARGE_T;
+    settings.DisTSetpoint       = DEFAULT_DIS_T;
+    settings.IgnoreTemp         = DEFAULT_IGNORE_TEMP;
+    settings.IgnoreVolt         = DEFAULT_IGNORE_VOLT;
+    settings.IgnoreTempThresh   = DEFAULT_IGNORE_TEMP_THRESH;
+    settings.balanceVoltage     = DEFAULT_BALANCE_V;
+    settings.balanceHyst        = DEFAULT_BALANCE_HYST;
+    settings.wifiEnabled        = 0;
+    settings.balancingEnabled   = 0;
+    strncpy(settings.wifiSSID, WIFI_SSID_DEFAULT, 31);
+    strncpy(settings.wifiPass,  WIFI_PASS_DEFAULT, 31);
+    settings.numCells           = DEFAULT_NUM_CELLS;
+    settings.numSeries          = BMS_NUM_SERIES;
+    settings.numParallel        = BMS_NUM_PARALLEL;
+    settings.socLo              = DEFAULT_SOC_LO;
+    settings.socHi              = DEFAULT_SOC_HI;
+    settings.canInhibitEnabled  = DEFAULT_CAN_INHIBIT;
+    settings.chargerHeartbeatID = DEFAULT_CHARGER_HB_ID;
+    settings.checksum           = settingsComputeChecksum(settings);
+    settingsSave(settings);
+    Logger::console("Defaults written to NVS. Checksum=0x%02X", settings.checksum);
+}
+
+// =============================================================================
+// sanitizeSettings
+// Clamp/fix any values that could cause undefined behaviour even if the
+// checksum passed (guards against old images with a stale-but-matching XOR).
+// =============================================================================
+static void sanitizeSettings()
+{
+    // Boolean flags must be 0 or 1 – a garbage byte of e.g. 0xA5 would
+    // enable WiFi / balancing unexpectedly and could trip the WDT.
+    settings.wifiEnabled      = settings.wifiEnabled      ? 1 : 0;
+    settings.balancingEnabled = settings.balancingEnabled ? 1 : 0;
+    settings.canInhibitEnabled = settings.canInhibitEnabled ? 1 : 0;
+    settings.IgnoreTemp       = settings.IgnoreTemp       ? 1 : 0;
+
+    // Parallel strings must be at least 1 to avoid divide-by-zero
+    if (settings.numParallel == 0) settings.numParallel = BMS_NUM_PARALLEL;
+    if (settings.numSeries   == 0) settings.numSeries   = BMS_NUM_SERIES;
+    if (settings.numCells    == 0) settings.numCells    = DEFAULT_NUM_CELLS;
+
+    // Voltage setpoints: reject obviously nonsensical values
+    if (settings.OverVSetpoint  < 3.0f || settings.OverVSetpoint  > 4.5f)
+        settings.OverVSetpoint  = DEFAULT_OVER_V;
+    if (settings.UnderVSetpoint < 2.0f || settings.UnderVSetpoint > 4.0f)
+        settings.UnderVSetpoint = DEFAULT_UNDER_V;
+    if (settings.balanceVoltage < 3.0f || settings.balanceVoltage > 4.5f)
+        settings.balanceVoltage = DEFAULT_BALANCE_V;
+
+    // Null-terminate SSID/pass in case of partial write
+    settings.wifiSSID[31] = '\0';
+    settings.wifiPass[31] = '\0';
+}
+
+// =============================================================================
 // loadSettings
 // =============================================================================
 void loadSettings()
 {
     EEPROM.get(EEPROM_PAGE, settings);
-    if (settings.version != EEPROM_VERSION) {
-        Logger::console("NVS version mismatch (0x%X vs 0x%X). Loading defaults.",
-                        settings.version, EEPROM_VERSION);
-        // Zero entire struct first to avoid garbage in padding bytes
-        memset(&settings, 0, sizeof(settings));
-        settings.version          = EEPROM_VERSION;
-        settings.canSpeed         = CAN_BAUD_RATE;
-        settings.batteryID        = 1;
-        settings.logLevel         = Logger::Info;
-        settings.OverVSetpoint    = DEFAULT_OVER_V;
-        settings.UnderVSetpoint   = DEFAULT_UNDER_V;
-        settings.OverTSetpoint    = DEFAULT_OVER_T;
-        settings.UnderTSetpoint   = DEFAULT_UNDER_T;
-        settings.ChargeTSetpoint  = DEFAULT_CHARGE_T;
-        settings.DisTSetpoint     = DEFAULT_DIS_T;
-        settings.IgnoreTemp       = DEFAULT_IGNORE_TEMP;
-        settings.IgnoreVolt       = DEFAULT_IGNORE_VOLT;
-        settings.IgnoreTempThresh = DEFAULT_IGNORE_TEMP_THRESH;
-        settings.balanceVoltage   = DEFAULT_BALANCE_V;
-        settings.balanceHyst      = DEFAULT_BALANCE_HYST;
-        settings.wifiEnabled      = 0;
-        settings.balancingEnabled = 0;
-        strncpy(settings.wifiSSID, WIFI_SSID_DEFAULT, 31);
-        strncpy(settings.wifiPass,  WIFI_PASS_DEFAULT, 31);
-        settings.numCells         = DEFAULT_NUM_CELLS;
-        settings.numSeries        = BMS_NUM_SERIES;
-        settings.numParallel      = BMS_NUM_PARALLEL;
-        settings.socLo            = DEFAULT_SOC_LO;
-        settings.socHi            = DEFAULT_SOC_HI;
-        settings.canInhibitEnabled  = DEFAULT_CAN_INHIBIT;
-        settings.chargerHeartbeatID = DEFAULT_CHARGER_HB_ID;
-        EEPROM.put(EEPROM_PAGE, settings);
-        EEPROM.commit();
-        Logger::console("Defaults written to NVS.");
+
+    uint8_t expectedChecksum = settingsComputeChecksum(settings);
+    bool versionOk  = (settings.version  == EEPROM_VERSION);
+    bool checksumOk = (settings.checksum == expectedChecksum);
+
+    if (!versionOk || !checksumOk) {
+        Logger::console("NVS invalid: version=0x%02X (want 0x%02X) checksum=0x%02X (want 0x%02X). Writing defaults.",
+                        settings.version,  EEPROM_VERSION,
+                        settings.checksum, expectedChecksum);
+        writeDefaults();
     } else {
-        Logger::console("Settings loaded: OV=%.2fV UV=%.2fV WiFi=%d CanInh=%d",
+        Logger::console("Settings OK (v0x%02X cksum=0x%02X). OV=%.2fV UV=%.2fV WiFi=%d CanInh=%d",
+                        settings.version, settings.checksum,
                         settings.OverVSetpoint, settings.UnderVSetpoint,
                         settings.wifiEnabled, settings.canInhibitEnabled);
     }
+
+    // Always sanitize after load – catches corruption that slipped past the
+    // checksum (e.g. old firmware with same XOR by coincidence).
+    sanitizeSettings();
 }
 
 // =============================================================================

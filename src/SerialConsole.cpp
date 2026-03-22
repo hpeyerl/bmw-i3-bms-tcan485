@@ -336,8 +336,7 @@ void SerialConsole::handleConfigCmd()
     }
 
     if (needSave) {
-        EEPROM.put(EEPROM_PAGE, settings);
-        EEPROM.commit();
+        settingsSave(settings);
         Logger::console("Saved.");
     }
 }

@@ -399,7 +399,7 @@ bool WiFiManager::begin()
             setU8("logLevel",    settings.logLevel,     0, 4);
             if(!j["canInhibitEnabled"].isNull()){ settings.canInhibitEnabled=(j["canInhibitEnabled"].as<int>()!=0)?1:0; changed=true; }
             if(!j["chargerHeartbeatID"].isNull()){ int v=j["chargerHeartbeatID"]; if(v>0&&v<=0x7FF){settings.chargerHeartbeatID=(uint32_t)v;changed=true;} }
-            if(changed){ EEPROM.put(EEPROM_PAGE,settings); EEPROM.commit(); }
+            if(changed){ settingsSave(settings); }
             req->send(200,"application/json",changed?"{\"ok\":true}":"{\"ok\":false,\"error\":\"no valid fields\"}");
         }
     );

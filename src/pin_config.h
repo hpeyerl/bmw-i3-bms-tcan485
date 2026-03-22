@@ -15,8 +15,8 @@
 // CAN (TWAI) - SN65HVD231 transceiver
 // TODO: Verify against YOUR board's schematic and adjust if needed.
 // ---------------------------------------------------------------------------
-#define PIN_CAN_TX      5     // TODO: may be GPIO27 on some board revisions
-#define PIN_CAN_RX      4     // TODO: may be GPIO26 on some board revisions
+#define PIN_CAN_TX      27     // TODO: may be GPIO27 on some board revisions
+#define PIN_CAN_RX      26     // TODO: may be GPIO26 on some board revisions
 #define CAN_BAUD_RATE   500000
 
 // ---------------------------------------------------------------------------

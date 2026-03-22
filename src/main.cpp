@@ -96,7 +96,7 @@ void setup()
     // Give the RTOS scheduler and WDT time to initialise before we do anything.
     // Without this, early GPIO activity can starve the idle task and trip the
     // Task WDT before Serial is even open (seen as TG1WDT_SYS_RESET boot loop).
-    delay(200);
+    //delay(200);
 
     // 1. Boost converter enable MUST be first - powers the SN65HVD231.
     //    Without this, CAN transceiver has no 3.3V supply.
@@ -131,9 +131,9 @@ void setup()
     //   - If CAN RX = GPIO4:              change PIN_WS2812 in pin_config.h
     //                                     to a free GPIO before enabling.
     //
-    //FastLED.addLeds<WS2812B, PIN_WS2812, GRB>(leds, WS2812_COUNT);
-    //FastLED.setBrightness(40);
-    //leds[0] = CRGB::Blue; FastLED.show();
+    FastLED.addLeds<WS2812B, PIN_WS2812, GRB>(leds, WS2812_COUNT);
+    FastLED.setBrightness(40);
+    leds[0] = CRGB::Blue; FastLED.show();
 
     // 7. USB serial console (CH9102 bridge - no native USB CDC, skip !Serial wait)
     Serial.begin(115200);
@@ -208,7 +208,7 @@ void loop()
     }
 
     // --- Status LED (disabled until CAN/LED GPIO conflict resolved) ---
-    // if (now - lastLEDUpdate >= LED_UPDATE_MS) { lastLEDUpdate=now; updateLED(); }
+    if (now - lastLEDUpdate >= LED_UPDATE_MS) { lastLEDUpdate=now; updateLED(); }
 
     // --- Serial console ---
     console.loop();

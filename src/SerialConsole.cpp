@@ -223,8 +223,8 @@ void SerialConsole::handleConfigCmd()
 
     String cmdString;
     int i = 0;
-    while (cmdBuffer[i] != '=' && i < ptrBuffer) cmdString.concat(String(cmdBuffer[i++]));
-    i++;
+    while (cmdBuffer[i] != '=' && i < ptrBuffer) cmdString.concat((char)(cmdBuffer[i++]));
+    i++;  // skip =
     if (i >= ptrBuffer) { Logger::console("Format: KEY=value"); return; }
 
     newValue = strtol((char *)(cmdBuffer + i), NULL, 0);

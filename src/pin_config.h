@@ -17,6 +17,7 @@
 // ---------------------------------------------------------------------------
 #define PIN_CAN_TX      27     // TODO: may be GPIO27 on some board revisions
 #define PIN_CAN_RX      26     // TODO: may be GPIO26 on some board revisions
+#define PIN_CAN_SE      23
 #define CAN_BAUD_RATE   500000
 
 // ---------------------------------------------------------------------------

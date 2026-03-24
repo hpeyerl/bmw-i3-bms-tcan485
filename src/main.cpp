@@ -103,6 +103,10 @@ void setup()
     pinMode(PIN_BOOST_EN, OUTPUT);
     digitalWrite(PIN_BOOST_EN, HIGH);
 
+    // 1.5 Enable CAN_SE to pull CAN transceiver pin 8 low.
+    pinMode(PIN_CAN_SE, OUTPUT);
+    digitalWrite(PIN_CAN_SE, LOW);
+
     // 2. RS-485 chip enable (MAX13487 auto-direction, drive HIGH to enable)
     pinMode(PIN_RS485_EN, OUTPUT);
     digitalWrite(PIN_RS485_EN, HIGH);

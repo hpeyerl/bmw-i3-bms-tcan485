@@ -90,7 +90,8 @@ void SerialConsole::printMenu()
     Logger::console("  BATTERYID=N      SimpBMS CAN battery ID [%d]", settings.batteryID);
     Logger::console("  LOGLEVEL=N       0=debug 1=info 2=warn 3=error 4=off [%d]", settings.logLevel);
     Logger::console("  CANINHIBIT=0/1   CAN-based balance inhibit [%s]", settings.canInhibitEnabled ? "ON" : "OFF");
-    Logger::console("  CHGID=0xNNN      Charger heartbeat CAN ID [0x%03X]\n", settings.chargerHeartbeatID);
+    Logger::console("  CHGID=0xNNN      Charger heartbeat CAN ID [0x%03X]", settings.chargerHeartbeatID);
+    Logger::console("  CSCVARIANT=0/1   CSC type: 0=BMW i3, 1=Mini-E [%d]\n", settings.CSCvariant);
 
     Logger::console("=================================================\n");
 }
@@ -330,6 +331,14 @@ void SerialConsole::handleConfigCmd()
             needSave = true;
             Logger::console("Charger heartbeat ID: 0x%03X", id);
         } else Logger::console("Invalid CAN ID (0x001-0x7FF)");
+    }
+    else if (cmdString == "CSCVARIANT") {
+        if (newValue == CSC_VARIANT_BMWI3 || newValue == CSC_VARIANT_MINIE) {
+            settings.CSCvariant = (uint8_t)newValue;
+            needSave = true;
+            Logger::console("CSC variant set: %s",
+                newValue == CSC_VARIANT_BMWI3 ? "0=BMW i3 (0x3D1-0x3D8)" : "1=Mini-E (0x0A0-0x15F)");
+        } else Logger::console("Invalid: 0=BMW i3, 1=Mini-E");
     }
     else {
         Logger::console("Unknown: '%s'  Press H for menu.", cmdString.c_str());

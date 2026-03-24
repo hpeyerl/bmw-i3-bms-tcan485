@@ -5,13 +5,17 @@
 // TX (SimpBMS protocol): frames 0x351/355/356/35A/35E/35F every 1 s
 // RX (FreeRTOS task on Core 0):
 //   - Charger/inverter heartbeat detection -> balance inhibit
-//   - BMW i3 CSC cell voltage frames  0x3D1-0x3D8 (3 sub-frames per cycle)
-//   - BMW i3 CSC temperature frames   0x3B1-0x3B8
-//   - BMW i3 CSC response frames      0x4A0 (enumeration replies)
+//   BMW i3 variant:
+//     - Cell voltage frames  0x3D1-0x3D8 (3 sub-frames per cycle)
+//     - Temperature frames   0x3B1-0x3B8
+//     - Enumeration replies  0x4A0
+//   Mini-E variant:
+//     - Cell voltage frames  0x0A0-0x15F (lower nibble=mod, upper nibble=type)
+//     - Temperature frames   0x170-0x17F
+//     - Command TX           0x080|nextmes (sent every loop iteration)
 //
 // Hardware: SN65HVD231 CAN transceiver on T-CAN485 board
 //   PIN_CAN_TX / PIN_CAN_RX defined in pin_config.h
-//   (Verify GPIO assignment against schematic - see pin_config.h TODO)
 // =============================================================================
 #include <Arduino.h>
 #include <driver/twai.h>
@@ -45,6 +49,9 @@ public:
     void sendI3ResetAllIDs(uint8_t maxID = 14);
     void sendI3BalanceReset();
 
+    // TX - Mini-E periodic command (called from main loop)
+    void sendMiniECommand();
+
     // TX - generic frame
     void sendFrame(uint32_t id, const uint8_t *data, uint8_t len, bool extended = false);
 
@@ -55,13 +62,13 @@ public:
     bool  getChargerActive() const;
     float getCanCurrentA()   const;
 
-    // BMW i3 slave data (called by BMSModuleManager each BMS cycle)
+    // BMW i3 / Mini-E slave data (called by BMSModuleManager each BMS cycle)
     bool getI3SlaveData(int addr, I3SlaveData &out);
 
     // Unassigned CSC detection (set by RX task when 0x4A0 seen without known ID)
     bool  hasUnassignedCSC() const;
     void  clearUnassignedFlag();
-    const uint8_t* getUnassignedDMC() const;  // 8 bytes of DMC identifier
+    const uint8_t* getUnassignedDMC() const;
 
 private:
     bool         running;
@@ -77,6 +84,14 @@ private:
         float   cells[12];
         uint8_t framesRx;   // bitmask: bits 0/1/2 = sub-frames 0/1/2 received
     } i3acc[I3_MAX_MODS];
+
+    // Mini-E command sequencer state
+    uint8_t  miniE_nextmes;   // 0x00..0x0B, wraps at 0x0C
+    uint8_t  miniE_mescycle;  // 0x00..0x0F, wraps at 0x10
+    uint8_t  miniE_testcycle; // 0..3, ramps up to enable measurements
+
+    // Mini-E CRC8 helper
+    uint8_t  miniEChecksum(uint32_t msgId, const uint8_t *buf, uint8_t len, uint8_t idx);
 
     // Unassigned CSC enumeration state
     bool    unassignedSeen;

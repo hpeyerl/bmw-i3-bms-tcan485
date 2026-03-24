@@ -62,10 +62,35 @@
 #define WIFI_AP_MODE            true
 
 // ---------------------------------------------------------------------------
+// CSC variant selection
+// ---------------------------------------------------------------------------
+#define CSC_VARIANT_BMWI3       0   // BMW i3 CSC  (0x3D1-0x3D8 / 0x3B1-0x3B8)
+#define CSC_VARIANT_MINIE       1   // Mini-E CSC  (0x0A0-0x15F / 0x170-0x17F)
+#define DEFAULT_CSC_VARIANT     CSC_VARIANT_MINIE
+
+// ---------------------------------------------------------------------------
+// Mini-E CSC CAN IDs
+// lower nibble = module number (1-based), upper nibble = message type
+//   0x0N0 = errors / balance status
+//   0x0N2 = cells 1-3 voltages
+//   0x0N3 = cells 4-6 voltages
+//   0x0N4 = cells 7-9 voltages
+//   0x0N5 = cells 10-12 voltages
+//   0x170-0x17F = temperatures (lower nibble = module)
+// TX to modules: 0x080 | nextmes  (balance/measurement command)
+// ---------------------------------------------------------------------------
+#define MINIE_CELL_BASE         0x0A0   // lowest possible cell ID
+#define MINIE_CELL_MAX          0x15F   // highest possible cell ID
+#define MINIE_TEMP_BASE         0x170
+#define MINIE_TEMP_MAX          0x17F
+#define MINIE_CMD_BASE          0x080   // TX command base
+#define MINIE_CELLS_PER_MOD     12      // we treat as 12s (4 sub-frames x 3 cells)
+
+// ---------------------------------------------------------------------------
 // NVS / settings version.  Bump whenever EEPROMSettings layout changes.
 // A mismatch triggers a factory-default reset on boot.
 // ---------------------------------------------------------------------------
-#define EEPROM_VERSION          0x20    // T-CAN485 port initial version
+#define EEPROM_VERSION          0x21    // bumped: added CSCvariant field
 #define EEPROM_PAGE             0
 
 // ---------------------------------------------------------------------------
@@ -97,17 +122,10 @@
 #define SERIALCONSOLE   Serial   // USB via CH9102
 
 // ---------------------------------------------------------------------------
-// settingsSave()
-// Always call this instead of raw EEPROM.put()+commit().
-// Updates the XOR checksum before writing so loadSettings() can detect
-// corruption or partial writes on the next boot.
-// ---------------------------------------------------------------------------
-#include <EEPROM.h>
-
-// ---------------------------------------------------------------------------
 // EEPROMSettings struct
 // Stored in ESP32 NVS via arduino-esp32 EEPROM emulation.
 // ---------------------------------------------------------------------------
+#include <EEPROM.h>
 typedef struct {
     uint8_t  version;
     uint8_t  checksum;
@@ -138,8 +156,15 @@ typedef struct {
     uint8_t  canInhibitEnabled;
     uint32_t chargerHeartbeatID;
     uint8_t  batteryID_u8;   // redundant field kept for struct padding alignment
+    uint8_t  CSCvariant;     // 0=BMW i3, 1=Mini-E
 } EEPROMSettings;
 
+// ---------------------------------------------------------------------------
+// settingsSave()
+// Always call this instead of raw EEPROM.put()+commit().
+// Updates the XOR checksum before writing so loadSettings() can detect
+// corruption or partial writes on the next boot.
+// ---------------------------------------------------------------------------
 inline uint8_t settingsComputeChecksum(const EEPROMSettings &s)
 {
     const uint8_t *p    = reinterpret_cast<const uint8_t *>(&s);

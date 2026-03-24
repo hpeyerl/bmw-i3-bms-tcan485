@@ -211,6 +211,15 @@ void loop()
         // EEPROM.put(EEPROM_PAGE, settings); EEPROM.commit();
     }
 
+    // --- Mini-E command sequencer (must run every ~2ms to poll modules) ---
+    if (settings.CSCvariant == CSC_VARIANT_MINIE && can.isRunning()) {
+        static uint32_t lastMiniECmd = 0;
+        if (now - lastMiniECmd >= 2) {
+            lastMiniECmd = now;
+            can.sendMiniECommand();
+        }
+    }
+
     // --- Status LED (disabled until CAN/LED GPIO conflict resolved) ---
     if (now - lastLEDUpdate >= LED_UPDATE_MS) { lastLEDUpdate=now; updateLED(); }
 
@@ -276,6 +285,7 @@ static void writeDefaults()
     settings.socHi              = DEFAULT_SOC_HI;
     settings.canInhibitEnabled  = DEFAULT_CAN_INHIBIT;
     settings.chargerHeartbeatID = DEFAULT_CHARGER_HB_ID;
+    settings.CSCvariant         = DEFAULT_CSC_VARIANT;
     settings.checksum           = settingsComputeChecksum(settings);
     settingsSave(settings);
     Logger::console("Defaults written to NVS. Checksum=0x%02X", settings.checksum);
@@ -294,6 +304,7 @@ static void sanitizeSettings()
     settings.balancingEnabled = settings.balancingEnabled ? 1 : 0;
     settings.canInhibitEnabled = settings.canInhibitEnabled ? 1 : 0;
     settings.IgnoreTemp       = settings.IgnoreTemp       ? 1 : 0;
+    if (settings.CSCvariant > CSC_VARIANT_MINIE) settings.CSCvariant = DEFAULT_CSC_VARIANT;
 
     // Parallel strings must be at least 1 to avoid divide-by-zero
     if (settings.numParallel == 0) settings.numParallel = BMS_NUM_PARALLEL;

@@ -1,4 +1,6 @@
 #pragma once
+// Credits:
+//   Tom-evnut      (Tom-evnut/BMWPhevBMS)       - BMW i3 CSC CAN protocol, MIT
 // =============================================================================
 // BMSModule.h - BMS module data model (BMW i3 CSC variant)
 // Pure data model: no hardware dependencies, no Tesla UART code.

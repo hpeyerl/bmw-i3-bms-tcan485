@@ -1,3 +1,5 @@
+// Credits:
+//   Tom-evnut      (Tom-evnut/BMWPhevBMS)       - BMW i3 CSC CAN protocol, MIT
 // =============================================================================
 // BMSModuleManager.cpp - Pack-level BMS manager (BMW i3 CAN only)
 //

@@ -1,3 +1,5 @@
+// Credits:
+//   Tom-evnut      (Tom-evnut/BMWPhevBMS)       - BMW i3 CSC CAN protocol, MIT
 // =============================================================================
 // BMSModule.cpp - BMS module data model (BMW i3 CSC variant)
 // Data is written by BMSModuleManager::getAllVoltTempFromCAN() which reads

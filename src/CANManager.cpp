@@ -16,6 +16,7 @@ CANManager::CANManager()
     : running(false), rxTaskHandle(nullptr),
       lastChargerSeen(0), canCurrentA(0.0f),
       miniE_nextmes(0), miniE_mescycle(0), miniE_testcycle(0),
+      bmwI3Bus_counter(0),
       unassignedSeen(false)
 {
     memset(i3data, 0, sizeof(i3data));
@@ -132,59 +133,121 @@ void CANManager::processRxFrame(const twai_message_t &msg)
         return;
     }
 
-    // Mini-E cell voltage frames: 0x0A0..0x15F
+    // ==========================================================================
+    // BMW i3 CSC (BMWI3BUS variant) - confirmed protocol from SME capture
+    //
+    // Frame ID structure: upper byte = type, lower nibble = module address (0-based)
+    //   0x10N = CSC heartbeat/status (N = module addr)
+    //   0x11N = CSC init/ack
+    //   0x12N = cells 1-3   (LE 16-bit, 1mV/bit, D7=0, D8=CRC)
+    //   0x13N = cells 4-6
+    //   0x14N = cells 7-9
+    //   0x15N = cells 10-12
+    //   0x16N = raw NTC ADC values (3x LE 16-bit thermistors, D7=0, D8=CRC)
+    //   0x17N = decoded status2 (D5 = temperature + 40 = degC)
+    //   0x1CN = balance/fault status flags
+    //   0x1DN = additional status flags
+    // ==========================================================================
+    if (settings.CSCvariant == CSC_VARIANT_BMWI3BUS &&
+        id >= BMWI3BUS_CELL_BASE && id <= 0x1FF)
+    {
+        int mod_addr = (int)(id & 0x00F);         // lower nibble = module address
+        int type     = (int)(id & 0x1F0) >> 4;   // bits[7:4] = frame type
+        int mod      = mod_addr + 1;              // 1-based slot
+        if (mod < 1 || mod >= I3_MAX_MODS) return;
+
+        // Cell voltage frames: type 0x12-0x15, 3 cells each, LE 16-bit, 1mV/bit
+        if (type >= 0x12 && type <= 0x15 && dlc >= 6) {
+            int sub  = type - 0x12;  // 0=cells1-3, 1=cells4-6, 2=cells7-9, 3=cells10-12
+            int base = sub * 3;
+            for (int c = 0; c < 3; c++) {
+                uint16_t raw = (uint16_t)msg.data[c * 2] |
+                               ((uint16_t)msg.data[c * 2 + 1] << 8);
+                if (raw > 0 && raw < 5000) {
+                    i3acc[mod].cells[base + c] = raw * 0.001f;
+                }
+            }
+            i3acc[mod].framesRx |= (1 << sub);
+            if (i3acc[mod].framesRx == 0x0F) {
+                memcpy(i3data[mod].cellV, i3acc[mod].cells, sizeof(i3acc[mod].cells));
+                i3data[mod].fresh      = true;
+                i3data[mod].lastSeenMs = millis();
+                i3acc[mod].framesRx    = 0;
+                Logger::debug("CAN RX: mod %d cells updated (%.3fV avg)",
+                              mod, (i3data[mod].cellV[0] + i3data[mod].cellV[11]) / 2.0f);
+            }
+            return;
+        }
+
+        // Decoded temperature frame: type 0x17, D5 = temp + 40 (degC)
+        if (type == 0x17 && dlc >= 5) {
+            i3data[mod].temp[0]    = (float)msg.data[4] - 40.0f;
+            i3data[mod].temp[1]    = i3data[mod].temp[0];
+            i3data[mod].lastSeenMs = millis();
+            return;
+        }
+
+        // Raw NTC ADC frame: type 0x16 — store for diagnostics
+        if (type == 0x16 && dlc >= 6) {
+            memcpy(i3data[mod].dmcBytes, msg.data, 6);
+            return;
+        }
+
+        // Heartbeat: type 0x10 — keep module alive timestamp
+        if (type == 0x10) {
+            i3data[mod].lastSeenMs = millis();
+            return;
+        }
+
+        return;
+    }
+
+    // Mini-E cell voltage frames: 0x0A0-0x15F
     // Lower nibble = module (1-based), upper nibble = sub-frame type
     //   0x0N0 = error/balance status
     //   0x0N2 = cells 0-2
     //   0x0N3 = cells 3-5
     //   0x0N4 = cells 6-8
     //   0x0N5 = cells 9-11
-    if (id >= MINIE_CELL_BASE && id <= MINIE_CELL_MAX) {
-        int mod  = (int)(id & 0x00F);          // module number 1..8
-        int type = (int)((id & 0x0F0) >> 4);   // sub-frame type
+    if (settings.CSCvariant == CSC_VARIANT_MINIE &&
+        id >= MINIE_CELL_BASE && id <= MINIE_CELL_MAX)
+    {
+        int mod_addr = (int)(id & 0x00F);          // module number 1..8
+        int type     = (int)((id & 0x0F0)>>4);     // sub-frame type
+        int mod      = mod_addr + 1;
+        int sub = -1;
+
         if (mod < 1 || mod >= I3_MAX_MODS) return;
 
-        if (type == 0) {
-            // Error/balance status frame — store raw for future use
-            // buf[0..3] = error bits, buf[4..5] = balance bits
-            i3data[mod].dmcBytes[0] = msg.data[0];
-            i3data[mod].dmcBytes[1] = msg.data[1];
-            return;
-        }
+        if (type < 6 && type > 1)
+            sub = type-2;    // 0x20>>4-2 = 0
 
-        // Cell voltage sub-frames: type 2=cells 0-2, 3=cells 3-5, 4=cells 6-8, 5=cells 9-11
-        if (type >= 2 && type <= 5 && dlc >= 6) {
-            int base = (type - 2) * 3;
+        if (sub >= 0 && dlc >= 6) {
+            int base = sub * 3;
             for (int c = 0; c < 3; c++) {
                 uint8_t lo = msg.data[c * 2];
                 uint8_t hi = msg.data[c * 2 + 1];
-                if (hi < 0x40) {  // valid reading
+                if (hi < 0x40) {
                     i3acc[mod].cells[base + c] = float(lo + (hi & 0x3F) * 256) / 1000.0f;
                 }
             }
-            // Mark this sub-frame received (bit 0=type2, 1=type3, 2=type4, 3=type5)
-            i3acc[mod].framesRx |= (1 << (type - 2));
-            // When all 4 sub-frames received, commit to i3data
+            i3acc[mod].framesRx |= (1 << sub);
             if (i3acc[mod].framesRx == 0x0F) {
                 memcpy(i3data[mod].cellV, i3acc[mod].cells, sizeof(i3acc[mod].cells));
                 i3data[mod].fresh      = true;
                 i3data[mod].lastSeenMs = millis();
                 i3acc[mod].framesRx    = 0;
-                if (!i3data[mod].dmcBytes[7]) {
-                    // Mark module as seen
-                    i3data[mod].dmcBytes[7] = 1;
-                }
             }
         }
         return;
     }
 
     // Mini-E temperature frames: 0x170..0x17F
-    // Lower nibble = module number (1-based)
-    if (id >= MINIE_TEMP_BASE && id <= MINIE_TEMP_MAX) {
-        int mod = (int)(id & 0x00F);
-        if (mod < 1 || mod >= I3_MAX_MODS || dlc < 4) return;
-        // Temperatures: buf[0..3], each byte = raw - 40 degC
+    if (settings.CSCvariant == CSC_VARIANT_MINIE &&
+        id >= MINIE_TEMP_BASE && id <= MINIE_TEMP_MAX)
+    {
+        int mod = (int)(id & 0x00F) + 1;
+        if (mod < 1 || mod >= I3_MAX_MODS || dlc < 2) return;
         i3data[mod].temp[0]    = (float)msg.data[0] - 40.0f;
         i3data[mod].temp[1]    = (float)msg.data[1] - 40.0f;
         i3data[mod].lastSeenMs = millis();
@@ -270,7 +333,7 @@ void CANManager::sendI3BalanceReset()
 }
 
 // =============================================================================
-// Mini-E support
+// Mini-E support (CSC_VARIANT_MINIE)
 // =============================================================================
 
 // CRC8 finalxor table from reference implementation (Tom-evnut/BMWPhevBMS)
@@ -281,11 +344,12 @@ static const uint8_t miniE_finalxor[12] = {
 uint8_t CANManager::miniEChecksum(uint32_t msgId, const uint8_t *buf, uint8_t len, uint8_t idx)
 {
     static CRC8 crc8;
-    // Build canmes array: [id_hi, id_lo, buf[0]..buf[len-2]]  (exclude last byte = checksum slot)
+    static bool crc8_init = false;
+    if (!crc8_init) { crc8.begin(); crc8_init = true; }
     uint8_t canmes[11];
     canmes[0] = (msgId >> 8) & 0xFF;
     canmes[1] =  msgId       & 0xFF;
-    int meslen = len + 1;   // matches reference: msg.len + 1
+    int meslen = len + 1;
     for (int i = 0; i < len - 1; i++) canmes[i + 2] = buf[i];
     return crc8.get_crc8(canmes, meslen, miniE_finalxor[idx % 12]);
 }
@@ -294,10 +358,8 @@ void CANManager::sendMiniECommand()
 {
     if (!running) return;
 
-    // Wrap mescycle at 0x10
     if (miniE_mescycle > 0x0F) miniE_mescycle = 0;
 
-    // Wrap nextmes and ramp testcycle (enables measurements after 3 cycles)
     if (miniE_nextmes >= 0x0C) {
         miniE_nextmes = 0;
         if (miniE_testcycle < 4) miniE_testcycle++;
@@ -306,15 +368,14 @@ void CANManager::sendMiniECommand()
     uint32_t msgId = MINIE_CMD_BASE | miniE_nextmes;
     uint8_t buf[8] = {0};
 
-    // buf[0:1] = balance target voltage (idle = 0x1068 = 4200mV)
     buf[0] = 0x68; buf[1] = 0x10;
-    buf[2] = 0x00;  // balance bits (no balancing)
+    buf[2] = 0x00;
 
     if (miniE_testcycle < 3) {
-        buf[3] = 0x00; buf[4] = 0x00;  // no measurements yet
+        buf[3] = 0x00; buf[4] = 0x00;
     } else {
-        buf[3] = 0x50;  // request voltage + temperature measurements
-        buf[4] = 0x00;  // no active balancing
+        buf[3] = 0x50;
+        buf[4] = 0x00;
     }
     buf[5] = 0x00;
     buf[6] = miniE_mescycle << 4;
@@ -325,6 +386,63 @@ void CANManager::sendMiniECommand()
 
     miniE_mescycle++;
     miniE_nextmes++;
+}
+
+// =============================================================================
+// BMWI3BUS TX command (CSC_VARIANT_BMWI3BUS)
+//
+// Confirmed SME TX format from capture:
+//   IDs:  0x080-0x087 (one per CSC slot)
+//   Data: C7 10 00 50 20 00 [counter] [CRC]
+//   Counter increments by 0x10 per cycle, wraps at 0x100
+//   CRC: same CRC8 finalxor as Mini-E, indexed by slot
+// =============================================================================
+// =============================================================================
+// BMWI3BUS TX command (CSC_VARIANT_BMWI3BUS)
+//
+// Confirmed SME init sequence from capture (frames 0-44 before first cell data):
+//   Cycle 0: D4=0x00, counter=0x10
+//   Cycle 1: D4=0x00, counter=0x20
+//   Cycle 2: D4=0x00, counter=0x34  (note: not 0x30 - SME skips here)
+//   Cycle 3: D4=0x10, counter=0x40  (CSC 0x0115 D1 goes 0x10 after this)
+//   Cycle 4+: D4=0x50, counter increments 0x10 per cycle (steady state)
+// =============================================================================
+void CANManager::sendBMWI3BUSCommand()
+{
+    if (!running) return;
+
+    uint8_t d4;
+    uint8_t counter;
+
+    // Init sequence: 4 special cycles before steady state
+    static const uint8_t init_d4[4]      = { 0x00, 0x00, 0x00, 0x10 };
+    static const uint8_t init_counter[4] = { 0x10, 0x20, 0x34, 0x40 };
+
+    if (bmwI3Bus_counter < 4) {
+        // Still in init sequence
+        d4      = init_d4[bmwI3Bus_counter];
+        counter = init_counter[bmwI3Bus_counter];
+    } else {
+        // Steady state: D4=0x50, counter runs 0x50, 0x60, ... wrapping
+        d4      = 0x50;
+        counter = 0x40 + ((bmwI3Bus_counter - 3) * 0x10) & 0xFF;
+    }
+
+    for (uint8_t slot = 0; slot < 8; slot++) {
+        uint32_t msgId = MINIE_CMD_BASE | slot;
+        uint8_t buf[8];
+        buf[0] = 0xC7;
+        buf[1] = 0x10;
+        buf[2] = 0x00;
+        buf[3] = d4;
+        buf[4] = 0x20;
+        buf[5] = 0x00;
+        buf[6] = counter;
+        buf[7] = miniEChecksum(msgId, buf, 8, slot);
+        sendFrame(msgId, buf, 8);
+    }
+
+    bmwI3Bus_counter++;
 }
 
 void CANManager::sendFrame(uint32_t id, const uint8_t *data, uint8_t len, bool extended)

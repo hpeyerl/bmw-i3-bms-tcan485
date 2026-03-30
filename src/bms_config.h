@@ -65,32 +65,42 @@
 // CSC variant selection
 // ---------------------------------------------------------------------------
 #define CSC_VARIANT_BMWI3       0   // BMW i3 CSC  (0x3D1-0x3D8 / 0x3B1-0x3B8)
-#define CSC_VARIANT_MINIE       1   // Mini-E CSC  (0x0A0-0x15F / 0x170-0x17F)
-#define DEFAULT_CSC_VARIANT     CSC_VARIANT_MINIE
+#define CSC_VARIANT_MINIE       1   // Mini-E CSC  (0x080 cmd / 0x0A0-0x15F cells / 0x170-0x17F temps)
+#define CSC_VARIANT_BMWI3BUS    2   // BMW i3 bus CSC (0x080 cmd / 0x100-0x15F cells / 0x170-0x17F temps)
+#define DEFAULT_CSC_VARIANT     CSC_VARIANT_BMWI3BUS
 
 // ---------------------------------------------------------------------------
-// Mini-E CSC CAN IDs
-// lower nibble = module number (1-based), upper nibble = message type
-//   0x0N0 = errors / balance status
-//   0x0N2 = cells 1-3 voltages
-//   0x0N3 = cells 4-6 voltages
-//   0x0N4 = cells 7-9 voltages
-//   0x0N5 = cells 10-12 voltages
-//   0x170-0x17F = temperatures (lower nibble = module)
-// TX to modules: 0x080 | nextmes  (balance/measurement command)
+// Mini-E / BMWI3BUS CSC CAN IDs
+//
+// Frame ID structure: bits [7:4] = message type, bits [3:0] = module address
+//   type 0x000 = status/error    (e.g. 0x100 = module 0 status)
+//   type 0x020 = cells 1-3       (e.g. 0x120 = module 0 cells 1-3)
+//   type 0x030 = cells 4-6       (e.g. 0x130 = module 0 cells 4-6)
+//   type 0x040 = cells 7-9       (e.g. 0x140 = module 0 cells 7-9)
+//   type 0x050 = cells 10-12     (e.g. 0x150 = module 0 cells 10-12)
+//   type 0x070 = temperatures    (e.g. 0x170 = module 0 temps)
+//
+// Mini-E uses module addresses 0xA-0xF (cell frames 0x0A0-0x15F)
+// BMWI3BUS uses module addresses 0x0-0x5 (cell frames 0x100-0x15F)
+// Both share the same command TX base and temperature range
+//
+// NOTE: 0x130 is both the BMW i3 wake frame AND module-0 cells-4-6 frame.
+//       In Mini-E/BMWI3BUS mode we do NOT send 0x130 as a wake frame.
 // ---------------------------------------------------------------------------
-#define MINIE_CELL_BASE         0x0A0   // lowest possible cell ID
-#define MINIE_CELL_MAX          0x15F   // highest possible cell ID
-#define MINIE_TEMP_BASE         0x170
+#define MINIE_CELL_BASE         0x0A0   // Mini-E: lowest cell frame ID
+#define BMWI3BUS_CELL_BASE      0x100   // BMWI3BUS: lowest cell frame ID
+#define MINIE_CELL_MAX          0x15F   // Mini-E: highest cell frame ID
+#define BMWI3BUS_FRAME_MAX      0x1FF   // BMWI3BUS: covers 0x100-0x1FF (cells/temp/status)
+#define MINIE_TEMP_BASE         0x170   // Mini-E temperature frames
 #define MINIE_TEMP_MAX          0x17F
-#define MINIE_CMD_BASE          0x080   // TX command base
-#define MINIE_CELLS_PER_MOD     12      // we treat as 12s (4 sub-frames x 3 cells)
+#define MINIE_CMD_BASE          0x080   // TX command base (both variants)
+#define MINIE_CELLS_PER_MOD     12      // 12 cells per module, 3 per sub-frame
 
 // ---------------------------------------------------------------------------
 // NVS / settings version.  Bump whenever EEPROMSettings layout changes.
 // A mismatch triggers a factory-default reset on boot.
 // ---------------------------------------------------------------------------
-#define EEPROM_VERSION          0x21    // bumped: added CSCvariant field
+#define EEPROM_VERSION          0x22    // bumped: added CSC_VARIANT_BMWI3BUS
 #define EEPROM_PAGE             0
 
 // ---------------------------------------------------------------------------

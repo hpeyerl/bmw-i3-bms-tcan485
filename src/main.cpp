@@ -211,12 +211,23 @@ void loop()
         // EEPROM.put(EEPROM_PAGE, settings); EEPROM.commit();
     }
 
-    // --- Mini-E command sequencer (must run every ~2ms to poll modules) ---
-    if (settings.CSCvariant == CSC_VARIANT_MINIE && can.isRunning()) {
-        static uint32_t lastMiniECmd = 0;
-        if (now - lastMiniECmd >= 2) {
-            lastMiniECmd = now;
-            can.sendMiniECommand();
+    if (can.isRunning()) {
+        // --- CSC command sequencer (must run every ~2ms to poll modules) ---
+        if (settings.CSCvariant == CSC_VARIANT_MINIE) {
+            // Mini-E: one frame per call cycling through 12 messages, needs ~2ms cadence
+            static uint32_t lastMiniECmd = 0;
+            if (now - lastMiniECmd >= 2) {
+                lastMiniECmd = now;
+                can.sendMiniECommand();
+            }
+        // --- CSC command sequencer (must run every ~24ms to poll modules) ---
+        } else if (settings.CSCvariant == CSC_VARIANT_BMWI3BUS) {
+            // BMWI3BUS: burst of 8 frames per call, 24ms cadence matches SME
+            static uint32_t lastBMWCmd = 0;
+            if (now - lastBMWCmd >= 24) {
+                lastBMWCmd = now;
+                can.sendBMWI3BUSCommand();
+            }
         }
     }
 
@@ -304,7 +315,7 @@ static void sanitizeSettings()
     settings.balancingEnabled = settings.balancingEnabled ? 1 : 0;
     settings.canInhibitEnabled = settings.canInhibitEnabled ? 1 : 0;
     settings.IgnoreTemp       = settings.IgnoreTemp       ? 1 : 0;
-    if (settings.CSCvariant > CSC_VARIANT_MINIE) settings.CSCvariant = DEFAULT_CSC_VARIANT;
+    if (settings.CSCvariant > CSC_VARIANT_BMWI3BUS) settings.CSCvariant = DEFAULT_CSC_VARIANT;
 
     // Parallel strings must be at least 1 to avoid divide-by-zero
     if (settings.numParallel == 0) settings.numParallel = BMS_NUM_PARALLEL;

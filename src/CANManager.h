@@ -49,8 +49,12 @@ public:
     void sendI3ResetAllIDs(uint8_t maxID = 14);
     void sendI3BalanceReset();
 
-    // TX - Mini-E periodic command (called from main loop)
+    // TX - Mini-E periodic command (CSC_VARIANT_MINIE, called from main loop)
     void sendMiniECommand();
+
+    // TX - BMWI3BUS periodic command (CSC_VARIANT_BMWI3BUS, called from main loop)
+    // Sends confirmed SME format: C7 10 00 50 20 00 [counter] [CRC] on 0x080-0x087
+    void sendBMWI3BUSCommand();
 
     // TX - generic frame
     void sendFrame(uint32_t id, const uint8_t *data, uint8_t len, bool extended = false);
@@ -92,6 +96,9 @@ private:
 
     // Mini-E CRC8 helper
     uint8_t  miniEChecksum(uint32_t msgId, const uint8_t *buf, uint8_t len, uint8_t idx);
+
+    // BMWI3BUS command counter (independent of miniE_mescycle)
+    uint16_t bmwI3Bus_counter; // cycle count: 0-3=init, 4+=steady state
 
     // Unassigned CSC enumeration state
     bool    unassignedSeen;

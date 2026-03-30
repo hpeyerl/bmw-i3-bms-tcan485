@@ -67,7 +67,7 @@
 #define CSC_VARIANT_BMWI3       0   // BMW i3 CSC  (0x3D1-0x3D8 / 0x3B1-0x3B8)
 #define CSC_VARIANT_MINIE       1   // Mini-E CSC  (0x080 cmd / 0x0A0-0x15F cells / 0x170-0x17F temps)
 #define CSC_VARIANT_BMWI3BUS    2   // BMW i3 bus CSC (0x080 cmd / 0x100-0x15F cells / 0x170-0x17F temps)
-#define DEFAULT_CSC_VARIANT     CSC_VARIANT_BMWI3BUS
+#define DEFAULT_CSC_VARIANT     CSC_VARIANT_BMWI3
 
 // ---------------------------------------------------------------------------
 // Mini-E / BMWI3BUS CSC CAN IDs

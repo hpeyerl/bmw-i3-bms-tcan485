@@ -215,8 +215,7 @@ float BMSModuleManager::getSoCPercent() const
 // ---------------------------------------------------------------------------
 void BMSModuleManager::printPackSummary()
 {
-    Logger::console("================ BMW i3 Pack Status ================");
-    Logger::console(isFaulted ? "  *** FAULTED ***" : "  All systems go!");
+    Logger::console("================ BMW i3 Pack Status: %s =============", isFaulted ? "FAULTED " : "No Faults");
     Logger::console("Modules:%d  Pack:%.2fV  AvgCell:%.3fV  AvgTemp:%.1fC  SoC:%.0f%%",
                     numFoundModules, packVolt, getAvgCellVolt(),
                     getAvgTemperature(), getSoCPercent());
@@ -241,8 +240,7 @@ void BMSModuleManager::printPackSummary()
 
 void BMSModuleManager::printPackDetails()
 {
-    Logger::console("================ BMW i3 Pack Details ================");
-    Logger::console(isFaulted ? "  *** FAULTED ***" : "  All systems go!");
+    Logger::console("================ BMW i3 Pack Details: %s =============", isFaulted ? "FAULTED " : "No Faults");
     for (int y = 1; y <= BMW_I3_MAX_MODS; y++) {
         if (!modules[y].isExisting()) continue;
         SERIALCONSOLE.printf("Mod #%d  %.3fV", y, modules[y].getModuleVoltage());

@@ -4,9 +4,11 @@ A battery management system firmware for reusing BMW i3 Cell Supervision Circuit
 
 Based on the [SimpBMS](https://github.com/Tom-evnut/SimpBMS) architecture by Tom-evnut, ported from Teensy 3.2 to ESP32 with a fully reverse-engineered BMW i3 CSC protocol.
 
+## Note
 A note about the BMWI3BUS Variant.  A number of BMWI3 battery packs were bought at the receivership auction of Vicinity Motor Corp.  It appears that a transit bus they were working on had 4 of these packs in it and 3 of these 120aH packs were purchased.  It was discovered that the SME and CSC's were different from a standard BMW i3 SME/CSCs.   So this repository has an additional CSCVariant for these oddball packs.  The hardware in the packs appears identical but the firmware on the SME and CSC's appears to be different.
 
 The CSCVariant=BMSI3BUS can messages were decoded using Claude and code was made by Claude with steering/review/auditing by me (hpeyerl@).
+
 ---
 
 ## Features

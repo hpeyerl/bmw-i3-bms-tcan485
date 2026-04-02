@@ -76,8 +76,6 @@ The CSC modules daisy-chain from one to the next. Per the SimpBMS manual (p.16):
 
 Place a 120Ω resistor between CAN H and CAN L at the BMS end. The master connector pins 1+2 provide the far-end termination.
 
-> **Important:** CSC modules without a battery module connected will hold the CAN bus dominant and prevent communication. Use passive bridge dongles (shorting power and CAN pins through) for unpopulated slots.
-
 ---
 
 ## Protocol — BMWI3BUS Variant

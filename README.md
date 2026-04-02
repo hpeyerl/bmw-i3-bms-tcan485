@@ -167,10 +167,9 @@ JSON status endpoint: `http://192.168.4.1/status`
 
 ## Credits
 
-- [Collin Kidder / collin80](https://github.com/collin80/TeslaBMS) — original SimpBMS architecture (MIT)
-- [Tom-evnut](https://github.com/Tom-evnut/BMWPhevBMS) — BMW i3 CSC CAN protocol research (MIT)
+- [Collin Kidder / collin80](https://github.com/collin80/TeslaBMS) — original TeslaBMS architecture (MIT)
+- [Tom-evnut](https://github.com/Tom-evnut/SimpBMS) — BMW i3 CSC CAN protocol research (MIT), wiring reference and CSC connector pinouts
 - [ronaegis](https://github.com/ronaegis/tesla-bms-esp32s3) — ESP32 TWAI port pattern (MIT)
-- [SimpBMS / Engovis](https://github.com/Tom-evnut/SimpBMS) — wiring reference and CSC connector pinouts
 
 ---
 

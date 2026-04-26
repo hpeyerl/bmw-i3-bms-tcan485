@@ -65,6 +65,8 @@ public:
     // Charger/inverter heartbeat
     bool  getChargerActive() const;
     float getCanCurrentA()   const;
+    bool  hasExternalDevice() const;   // true once a non-CSC frame received
+    uint32_t getI3LastSeen(int addr) const;  // lastSeenMs for module addr
 
     // BMW i3 / Mini-E slave data (called by BMSModuleManager each BMS cycle)
     bool getI3SlaveData(int addr, I3SlaveData &out);
@@ -80,6 +82,7 @@ private:
 
     uint32_t     lastChargerSeen;
     float        canCurrentA;
+    bool         externalDeviceSeen;
 
     I3SlaveData  i3data[I3_MAX_MODS];
 

@@ -15,6 +15,7 @@ extern EEPROMSettings   settings;
 CANManager::CANManager()
     : running(false), rxTaskHandle(nullptr),
       lastChargerSeen(0), canCurrentA(0.0f),
+      externalDeviceSeen(false),
       miniE_nextmes(0), miniE_mescycle(0), miniE_testcycle(0),
       bmwI3Bus_counter(0),
       unassignedSeen(false)
@@ -31,6 +32,8 @@ bool CANManager::begin()
         (gpio_num_t)PIN_CAN_RX,
         TWAI_MODE_NORMAL
     );
+    g_config.tx_queue_len = 8;   // one full BMWI3BUS burst
+    g_config.rx_queue_len = 32;  // headroom for 8 CSCs broadcasting
     twai_timing_config_t  t_config = TWAI_TIMING_CONFIG_500KBITS();
     twai_filter_config_t  f_config = TWAI_FILTER_CONFIG_ACCEPT_ALL();
 
@@ -50,7 +53,8 @@ bool CANManager::begin()
     running = true;
     xTaskCreatePinnedToCore(rxTaskFn, "CAN_RX", 4096, this, 5, &rxTaskHandle, 0);
     Logger::info("CAN started: TX=GPIO%d RX=GPIO%d 500kbps", PIN_CAN_TX, PIN_CAN_RX);
-    sendI3WakeFrame();
+    if (settings.CSCvariant != CSC_VARIANT_BMWI3BUS)
+        sendI3WakeFrame();
     return true;
 }
 
@@ -71,8 +75,38 @@ void CANManager::rxTaskFn(void *param)
     CANManager *self = (CANManager *)param;
     twai_message_t msg;
     while (self->running) {
-        if (twai_receive(&msg, pdMS_TO_TICKS(100)) == ESP_OK)
+        if (twai_receive(&msg, pdMS_TO_TICKS(100)) == ESP_OK) {
             self->processRxFrame(msg);
+        } else {
+            // On receive timeout check for bus-off and recover.
+            // sendFrame() checks state before TX so no frames are queued
+            // during bus-off - safe to uninstall and reinstall driver.
+            twai_status_info_t status;
+            if (twai_get_status_info(&status) == ESP_OK &&
+                status.state == TWAI_STATE_BUS_OFF) {
+                Logger::warn("CAN: bus-off detected, recovering...");
+                twai_stop();
+                twai_driver_uninstall();
+                vTaskDelay(pdMS_TO_TICKS(200));
+                twai_general_config_t g = TWAI_GENERAL_CONFIG_DEFAULT(
+                    (gpio_num_t)PIN_CAN_TX,
+                    (gpio_num_t)PIN_CAN_RX, TWAI_MODE_NORMAL);
+                g.tx_queue_len = 8;
+                g.rx_queue_len = 32;
+                twai_timing_config_t t = TWAI_TIMING_CONFIG_500KBITS();
+                twai_filter_config_t f = TWAI_FILTER_CONFIG_ACCEPT_ALL();
+                if (twai_driver_install(&g, &t, &f) == ESP_OK &&
+                    twai_start() == ESP_OK) {
+                    self->bmwI3Bus_counter = 0;
+                    for (int m = 0; m < I3_MAX_MODS; m++)
+                        self->i3data[m].lastSeenMs = 0;
+                    Logger::warn("CAN: recovered from bus-off");
+                } else {
+                    Logger::error("CAN: recovery failed");
+                    self->running = false;
+                }
+            }
+        }
     }
     vTaskDelete(nullptr);
 }
@@ -84,7 +118,8 @@ void CANManager::processRxFrame(const twai_message_t &msg)
 
     // Charger heartbeat
     if (id == settings.chargerHeartbeatID || id == 0x305 || id == 0x306) {
-        lastChargerSeen = millis();
+        lastChargerSeen    = millis();
+        externalDeviceSeen = true;
         if ((id == 0x305 || id == 0x306) && dlc >= 2) {
             int16_t raw = (int16_t)((msg.data[0] << 8) | msg.data[1]);
             canCurrentA = raw * 0.1f;
@@ -254,6 +289,9 @@ void CANManager::processRxFrame(const twai_message_t &msg)
         return;
     }
 
+    // Any frame outside the CSC range means an external device (inverter/charger)
+    // is present that will ACK our Victron summary frames.
+    if (id < 0x080 || id > 0x1FF) externalDeviceSeen = true;
     wifiLogCAN(id, (uint8_t *)msg.data, dlc);
 }
 
@@ -261,7 +299,13 @@ bool  CANManager::getChargerActive() const {
     if (lastChargerSeen == 0) return false;
     return (millis() - lastChargerSeen) < CHARGER_TIMEOUT_MS;
 }
-float CANManager::getCanCurrentA() const { return canCurrentA; }
+float CANManager::getCanCurrentA()    const { return canCurrentA; }
+bool  CANManager::hasExternalDevice() const { return externalDeviceSeen; }
+
+uint32_t CANManager::getI3LastSeen(int addr) const {
+    if (addr < 1 || addr >= I3_MAX_MODS) return 0;
+    return i3data[addr].lastSeenMs;
+}
 
 bool CANManager::getI3SlaveData(int addr, I3SlaveData &out)
 {
@@ -391,20 +435,17 @@ void CANManager::sendMiniECommand()
 // =============================================================================
 // BMWI3BUS TX command (CSC_VARIANT_BMWI3BUS)
 //
-// Confirmed SME TX format from capture:
-//   IDs:  0x080-0x087 (one per CSC slot)
-//   Data: C7 10 00 50 20 00 [counter] [CRC]
-//   Counter increments by 0x10 per cycle, wraps at 0x100
-//   CRC: same CRC8 finalxor as Mini-E, indexed by slot
-// =============================================================================
-// =============================================================================
-// BMWI3BUS TX command (CSC_VARIANT_BMWI3BUS)
+// Confirmed SME TX format from CAN capture:
+//   IDs:  0x080-0x087 (one per CSC slot, addresses 0-7)
+//   Data: C7 10 00 [D4] 20 00 [counter] [CRC]
+//   CRC:  CRC8 poly=0x1D init=0xFF, input=[0x00, id_lo, D1-D7],
+//         XOR result with miniE_finalxor[slot]
 //
-// Confirmed SME init sequence from capture (frames 0-44 before first cell data):
+// Init sequence (D4 progression, first 4 cycles):
 //   Cycle 0: D4=0x00, counter=0x10
 //   Cycle 1: D4=0x00, counter=0x20
-//   Cycle 2: D4=0x00, counter=0x34  (note: not 0x30 - SME skips here)
-//   Cycle 3: D4=0x10, counter=0x40  (CSC 0x0115 D1 goes 0x10 after this)
+//   Cycle 2: D4=0x00, counter=0x34
+//   Cycle 3: D4=0x10, counter=0x40
 //   Cycle 4+: D4=0x50, counter increments 0x10 per cycle (steady state)
 // =============================================================================
 void CANManager::sendBMWI3BUSCommand()
@@ -448,13 +489,21 @@ void CANManager::sendBMWI3BUSCommand()
 void CANManager::sendFrame(uint32_t id, const uint8_t *data, uint8_t len, bool extended)
 {
     if (!running) return;
+    // Check controller state before TX. Calling twai_transmit() during bus-off
+    // with pending frames in the queue causes tx_msg_count to go negative,
+    // triggering an assert crash in the ESP-IDF TWAI driver.
+    twai_status_info_t status;
+    if (twai_get_status_info(&status) != ESP_OK ||
+        status.state != TWAI_STATE_RUNNING) return;
+
     twai_message_t msg;
     memset(&msg, 0, sizeof(msg));
     msg.identifier       = id;
     msg.extd             = extended ? 1 : 0;
     msg.data_length_code = (len <= 8) ? len : 8;
     memcpy(msg.data, data, msg.data_length_code);
-    esp_err_t res = twai_transmit(&msg, pdMS_TO_TICKS(5));
+    // Non-blocking: drop frame if TX queue full rather than blocking loop task.
+    esp_err_t res = twai_transmit(&msg, 0);
     if (res != ESP_OK)
         Logger::debug("CAN TX err 0x%02X on ID 0x%03X", res, id);
     wifiLogCAN(id, (uint8_t *)msg.data, msg.data_length_code);

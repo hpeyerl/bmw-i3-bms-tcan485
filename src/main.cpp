@@ -198,7 +198,10 @@ void loop()
     // --- SimpBMS CAN TX ---
     if (can.isRunning() && (now - lastCANSend >= CAN_SEND_INTERVAL_MS)) {
         lastCANSend = now;
-        can.sendBatterySummary();
+        // Only send Victron frames when an external device is present to ACK them.
+        // Unacknowledged CAN frames accumulate TX errors and cause bus-off.
+        if (can.hasExternalDevice())
+            can.sendBatterySummary();
     }
 
     // --- SOC save to NVS (replaces Teensy PMC low-voltage ISR) ---
@@ -222,9 +225,20 @@ void loop()
             }
         // --- CSC command sequencer (must run every ~24ms to poll modules) ---
         } else if (settings.CSCvariant == CSC_VARIANT_BMWI3BUS) {
-            // BMWI3BUS: burst of 8 frames per call, 24ms cadence matches SME
-            static uint32_t lastBMWCmd = 0;
-            if (now - lastBMWCmd >= 24) {
+            // Wait for CSC heartbeat before first TX burst, then send every 24ms.
+            // This prevents TX errors from firing into an empty/unstable bus.
+            static bool     bmwReadyToTx = false;
+            static uint32_t lastBMWCmd   = 0;
+            if (!bmwReadyToTx) {
+                for (int m = 1; m < I3_MAX_MODS; m++) {
+                    if (can.getI3LastSeen(m) != 0) {
+                        bmwReadyToTx = true;
+                        lastBMWCmd   = now; // start timer from now
+                        break;
+                    }
+                }
+            }
+            if (bmwReadyToTx && now - lastBMWCmd >= 24) {
                 lastBMWCmd = now;
                 can.sendBMWI3BUSCommand();
             }

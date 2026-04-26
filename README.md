@@ -74,9 +74,9 @@ The CSC modules daisy-chain from one to the next. Per the SimpBMS manual (p.16):
 | 8 | CAN L (to BMS) |
 | 1, 2 | 120Ω termination resistor |
 
-Place a 120Ω resistor between CAN H and CAN L at the BMS end. The master connector pins 1+2 provide the far-end termination.
-
 ---
+
+NOTE: The Lilygo T-CAN485 has an onboard termination resistor.  If using this with a Zombieverter, you will need to be careful about wiring because the Zombieverter also has onboard termination.
 
 ## Protocol — BMWI3BUS Variant
 

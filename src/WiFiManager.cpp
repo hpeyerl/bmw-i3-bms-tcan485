@@ -285,10 +285,36 @@ WiFiManager::WiFiManager() : running(false), ipAddr("") {}
 
 bool WiFiManager::begin()
 {
-    WiFi.softAP(settings.wifiSSID[0] ? settings.wifiSSID : WIFI_SSID_DEFAULT,
-                settings.wifiPass[0]  ? settings.wifiPass  : WIFI_PASS_DEFAULT);
-    ipAddr = WiFi.softAPIP().toString();
-    Logger::info("WiFi AP: SSID=%s  IP=%s", settings.wifiSSID, ipAddr.c_str());
+    if (settings.wifiMode == 1) {
+        // Station mode - connect to existing AP
+        WiFi.mode(WIFI_STA);
+        WiFi.begin(settings.wifiSSID[0] ? settings.wifiSSID : WIFI_SSID_DEFAULT,
+                   settings.wifiPass[0]  ? settings.wifiPass  : WIFI_PASS_DEFAULT);
+        Logger::info("WiFi STA: connecting to SSID=%s ...", settings.wifiSSID);
+        uint32_t start = millis();
+        while (WiFi.status() != WL_CONNECTED && millis() - start < 10000) {
+            delay(500);
+        }
+        if (WiFi.status() == WL_CONNECTED) {
+            ipAddr = WiFi.localIP().toString();
+            Logger::console("WiFi STA: connected, IP=%s", ipAddr.c_str());
+        } else {
+            Logger::warn("WiFi STA: connection failed, falling back to AP mode");
+            WiFi.disconnect();
+            WiFi.mode(WIFI_AP);
+            WiFi.softAP(settings.wifiSSID[0] ? settings.wifiSSID : WIFI_SSID_DEFAULT,
+                        settings.wifiPass[0]  ? settings.wifiPass  : WIFI_PASS_DEFAULT);
+            ipAddr = WiFi.softAPIP().toString();
+            Logger::info("WiFi AP fallback: IP=%s", ipAddr.c_str());
+        }
+    } else {
+        // Access point mode
+        WiFi.mode(WIFI_AP);
+        WiFi.softAP(settings.wifiSSID[0] ? settings.wifiSSID : WIFI_SSID_DEFAULT,
+                    settings.wifiPass[0]  ? settings.wifiPass  : WIFI_PASS_DEFAULT);
+        ipAddr = WiFi.softAPIP().toString();
+        Logger::info("WiFi AP: SSID=%s  IP=%s", settings.wifiSSID, ipAddr.c_str());
+    }
 
     if (server) { server->end(); delete server; server = nullptr; }
     server = new AsyncWebServer(80);
@@ -455,7 +481,11 @@ bool WiFiManager::begin()
 void WiFiManager::end()
 {
     if (server) { server->end(); delete server; server = nullptr; }
-    WiFi.softAPdisconnect(true);
+    if (settings.wifiMode == 1)
+        WiFi.disconnect(true);
+    else
+        WiFi.softAPdisconnect(true);
+    WiFi.mode(WIFI_OFF);
     running = false;
     Logger::info("WiFi stopped");
 }

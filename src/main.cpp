@@ -154,9 +154,11 @@ void setup()
 
     // 9. WiFi (if enabled at boot)
     if (settings.wifiEnabled) {
-        Logger::console("Starting WiFi AP...");
+        Logger::console("Starting WiFi (%s)...", settings.wifiMode == 1 ? "STA" : "AP");
         wifi.begin();
-        Logger::console("WiFi AP: SSID=%s  http://%s", settings.wifiSSID, wifi.getIP().c_str());
+        Logger::console("WiFi %s: SSID=%s  http://%s",
+                        settings.wifiMode == 1 ? "STA" : "AP",
+                        settings.wifiSSID, wifi.getIP().c_str());
     } else {
         Logger::console("WiFi disabled. Enable with WIFI=1 then reboot.");
     }
@@ -300,6 +302,7 @@ static void writeDefaults()
     settings.balanceVoltage     = DEFAULT_BALANCE_V;
     settings.balanceHyst        = DEFAULT_BALANCE_HYST;
     settings.wifiEnabled        = 0;
+    settings.wifiMode           = 0;  // AP mode by default
     settings.balancingEnabled   = 0;
     strncpy(settings.wifiSSID, WIFI_SSID_DEFAULT, 31);
     strncpy(settings.wifiPass,  WIFI_PASS_DEFAULT, 31);
@@ -326,6 +329,7 @@ static void sanitizeSettings()
     // Boolean flags must be 0 or 1 – a garbage byte of e.g. 0xA5 would
     // enable WiFi / balancing unexpectedly and could trip the WDT.
     settings.wifiEnabled      = settings.wifiEnabled      ? 1 : 0;
+    settings.wifiMode         = settings.wifiMode <= 1    ? settings.wifiMode : 0;
     settings.balancingEnabled = settings.balancingEnabled ? 1 : 0;
     settings.canInhibitEnabled = settings.canInhibitEnabled ? 1 : 0;
     settings.IgnoreTemp       = settings.IgnoreTemp       ? 1 : 0;

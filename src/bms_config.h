@@ -100,7 +100,7 @@
 // NVS / settings version.  Bump whenever EEPROMSettings layout changes.
 // A mismatch triggers a factory-default reset on boot.
 // ---------------------------------------------------------------------------
-#define EEPROM_VERSION          0x22    // bumped: added CSC_VARIANT_BMWI3BUS
+#define EEPROM_VERSION          0x23    // bumped: added wifiMode
 #define EEPROM_PAGE             0
 
 // ---------------------------------------------------------------------------
@@ -157,6 +157,7 @@ typedef struct {
     uint8_t  balancingEnabled;
     char     wifiSSID[32];
     char     wifiPass[32];
+    uint8_t  wifiMode;     // 0=AP, 1=STA
     uint8_t  numCells;       // cells per module (always 12 for BMW i3)
     uint8_t  numSeries;      // modules in series
     uint8_t  numParallel;    // strings in parallel

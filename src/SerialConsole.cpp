@@ -112,11 +112,15 @@ void SerialConsole::printMenu()
 
     Logger::console("--- Connectivity ---");
     Logger::console("  WIFI=0/1         WiFi at boot [%s]", settings.wifiEnabled ? "ON" : "OFF");
+    Logger::console("  WIFIMODE=AP/STA  WiFi mode [%s]", settings.wifiMode == 1 ? "STA" : "AP");
+    Logger::console("  WIFISSID=xxx     WiFi SSID [%s]", settings.wifiSSID);
+    Logger::console("  WIFIPASS=xxx     WiFi password");
     Logger::console("  BATTERYID=N      SimpBMS CAN battery ID [%d]", settings.batteryID);
     Logger::console("  LOGLEVEL=N       0=debug 1=info 2=warn 3=error 4=off [%d]", settings.logLevel);
     Logger::console("  CANINHIBIT=0/1   CAN-based balance inhibit [%s]", settings.canInhibitEnabled ? "ON" : "OFF");
     Logger::console("  CHGID=0xNNN      Charger heartbeat CAN ID [0x%03X]", settings.chargerHeartbeatID);
-    Logger::console("  CSCVARIANT=0/1/2 CSC type: 0=BMW i3, 1=Mini-E, 2=BMWI3BUS [%d]\n", settings.CSCvariant);
+    Logger::console("  CSCVARIANT=0/1/2 CSC type: 0=BMW i3, 1=Mini-E, 2=BMWI3BUS [%d]", settings.CSCvariant);
+    Logger::console("  REBOOT           Reboot the device\n");
 
     Logger::console("=================================================\n");
 }
@@ -321,6 +325,45 @@ void SerialConsole::handleConfigCmd()
             needSave = true;
             Logger::console("Ignore temps below: %.1fC", newFloat);
         } else Logger::console("Invalid (-100 to 0)");
+    }
+    else if (cmdString == "REBOOT") {
+        Logger::console("Rebooting...");
+        delay(200);
+        esp_restart();
+    }
+    else if (cmdString == "WIFIMODE") {
+        String val = String((char *)(cmdBuffer + i));
+        val.toUpperCase();
+        val.trim();
+        if (val == "STA" || val == "1") {
+            settings.wifiMode = 1;
+            needSave = true;
+            Logger::console("WiFi mode: STA (station) - reboot to apply");
+        } else if (val == "AP" || val == "0") {
+            settings.wifiMode = 0;
+            needSave = true;
+            Logger::console("WiFi mode: AP (access point) - reboot to apply");
+        } else {
+            Logger::console("Invalid: use AP or STA");
+        }
+    }
+    else if (cmdString == "WIFISSID") {
+        const char *val = (const char *)(cmdBuffer + i);
+        if (strlen(val) > 0 && strlen(val) < 32) {
+            strncpy(settings.wifiSSID, val, 31);
+            settings.wifiSSID[31] = '\0';
+            needSave = true;
+            Logger::console("WiFi SSID: %s (reboot to apply)", settings.wifiSSID);
+        } else Logger::console("Invalid: 1-31 characters");
+    }
+    else if (cmdString == "WIFIPASS") {
+        const char *val = (const char *)(cmdBuffer + i);
+        if (strlen(val) < 64) {
+            strncpy(settings.wifiPass, val, 31);
+            settings.wifiPass[31] = '\0';
+            needSave = true;
+            Logger::console("WiFi password set (reboot to apply)");
+        } else Logger::console("Invalid: max 31 characters");
     }
     else if (cmdString == "WIFI") {
         settings.wifiEnabled = (newValue != 0) ? 1 : 0;

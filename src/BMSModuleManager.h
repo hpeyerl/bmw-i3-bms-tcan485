@@ -20,6 +20,8 @@ public:
     // Pack-level data
     float   getPackVoltage()      const;
     float   getAvgTemperature()   const;
+    float   getHighTemperature()   const;
+    float   getLowTemperature()   const;
     float   getAvgCellVolt()      const;
     float   getLowCellVolt()      const;
     float   getHighCellVolt()     const;

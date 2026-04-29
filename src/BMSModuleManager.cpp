@@ -187,6 +187,32 @@ float BMSModuleManager::getAvgTemperature() const
     return (cnt > 0) ? sum / cnt : 0.0f;
 }
 
+float BMSModuleManager::getLowTemperature() const
+{
+    float sum = 0.0f;
+    int   cnt = 0;
+    for (int x = 1; x <= BMW_I3_MAX_MODS; x++) {
+        if (modules[x].isExisting()) {
+            float t = modules[x].getLowTemp();
+            if (t > -70.0f) { sum += t; cnt++; }
+        }
+    }
+    return (cnt > 0) ? sum / cnt : 0.0f;
+}
+
+float BMSModuleManager::getHighTemperature() const
+{
+    float sum = 0.0f;
+    int   cnt = 0;
+    for (int x = 1; x <= BMW_I3_MAX_MODS; x++) {
+        if (modules[x].isExisting()) {
+            float t = modules[x].getHighTemp();
+            if (t > -70.0f) { sum += t; cnt++; }
+        }
+    }
+    return (cnt > 0) ? sum / cnt : 0.0f;
+}
+
 float BMSModuleManager::getAvgCellVolt() const
 {
     float sum = 0.0f;

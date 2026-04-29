@@ -526,6 +526,24 @@ void CANManager::sendBatterySummary()
         if (socPer < 0.0f)   socPer = 0.0f;
     }
     uint8_t data[8];
+    // -------------------------------------------------------------------------
+    // 0x373 - Extended SimpBMS cell/temp summary (zombieverter format)
+    // bytes 0-1: min cell mV  bytes 2-3: max cell mV
+    // bytes 4-5: min temp K   bytes 6-7: max temp K
+    // Temperature encoding: Kelvin = C + 273  (zombieverter decodes as raw - 273)
+    // Only sent when an external device is present to ACK the frame.
+    // -------------------------------------------------------------------------
+    uint16_t loMV  = (uint16_t)(lowC  * 1000.0f);
+    uint16_t hiMV  = (uint16_t)(highC * 1000.0f);
+    uint16_t minTK = (uint16_t)(bms.getLowTemperature()  + 273.0f);
+    uint16_t maxTK = (uint16_t)(bms.getHighTemperature() + 273.0f);
+    memset(data, 0, 8);
+    data[0]=loMV&0xFF;  data[1]=(loMV>>8)&0xFF;
+    data[2]=hiMV&0xFF;  data[3]=(hiMV>>8)&0xFF;
+    data[4]=minTK&0xFF; data[5]=(minTK>>8)&0xFF;
+    data[6]=maxTK&0xFF; data[7]=(maxTK>>8)&0xFF;
+    sendFrame(0x373, data, 8);
+
     // 0x351
     int16_t cvh = (int16_t)(settings.OverVSetpoint  * ns * 10.0f);
     int16_t cvl = (int16_t)(settings.UnderVSetpoint * ns * 10.0f);

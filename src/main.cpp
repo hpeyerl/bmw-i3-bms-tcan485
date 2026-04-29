@@ -200,10 +200,7 @@ void loop()
     // --- SimpBMS CAN TX ---
     if (can.isRunning() && (now - lastCANSend >= CAN_SEND_INTERVAL_MS)) {
         lastCANSend = now;
-        // Only send Victron frames when an external device is present to ACK them.
-        // Unacknowledged CAN frames accumulate TX errors and cause bus-off.
-        if (can.hasExternalDevice())
-            can.sendBatterySummary();
+        can.sendBatterySummary();
     }
 
     // --- SOC save to NVS (replaces Teensy PMC low-voltage ISR) ---

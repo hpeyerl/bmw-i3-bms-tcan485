@@ -15,7 +15,8 @@ The CSCVariant=BMSI3BUS can messages were decoded using Claude and code was made
 
 - Reads cell voltages (12 cells per module, 1 mV resolution) and temperatures from up to 8 BMW i3 CSC modules
 - Outputs standard Victron/SimpBMS CAN messages (0x351, 0x355, 0x356, 0x35A, 0x35E, 0x35F) for integration with Victron GX devices, inverters, and chargers
-- WiFi AP mode with JSON status endpoint for monitoring
+- Outputs SimpBMS Extended summary CAN message (0x373) for Zombieverter VCU.
+- WiFi AP and STA modes with JSON status endpoint for monitoring
 - Serial console for configuration and diagnostics
 - NVS-backed settings with XOR checksum validation
 - Supports three CSC variants (selectable at runtime):
